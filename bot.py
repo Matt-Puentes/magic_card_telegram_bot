@@ -142,6 +142,8 @@ def main() -> None:
     token = os.environ.get("TELEGRAM_API_TOKEN")
     if token is None:
         raise RuntimeError("Environment variable TELEGRAM_API_TOKEN not found")
+    elif token == "NotSet":
+        raise RuntimeError("Environment variable TELEGRAM_API_TOKEN found, but isn't initialized")
     app = Application.builder().token(token).build()
 
     # Register the handler with filter
