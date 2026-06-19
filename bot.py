@@ -3,11 +3,13 @@ import os
 import re
 from typing import NamedTuple
 import requests
+from urllib.parse import quote as url_quote
 
-from telegram import InputMediaPhoto, Update, constants
 from telegram.ext import Application, filters, MessageHandler, CallbackContext
+from telegram import InputMediaPhoto, Update, constants
 
 logger = logging.getLogger(__name__)
+version = "1.0.1"
 
 
 async def handle_message(update: Update, context: CallbackContext) -> None:
@@ -101,7 +103,7 @@ class ScryFallException(Exception):
 # 2) Card with multiple images and URL - send MediaGroup w/ caption
 # 3) Card not found, list of possible other names - send formatted message
 async def get_card_info(card_name: str) -> Card | CardWithFaces | CardNotFound:
-    name_query = requests.get(f"https://api.scryfall.com/cards/named", params={"exact": card_name})
+    name_query = scryfall_fetch(f"https://api.scryfall.com/cards/named", parameters={"exact": card_name})
     # Parse the response
     parsed_card = name_query.json()
     if parsed_card["object"] == "card":
@@ -120,9 +122,10 @@ async def get_card_info(card_name: str) -> Card | CardWithFaces | CardNotFound:
         is_ambiguous = "type" in parsed_card and parsed_card["type"] == "ambiguous"
         not_found = "code" in parsed_card and parsed_card["code"] == "not_found"
         if is_ambiguous or not_found:
+            encoded_card_name = url_quote(card_name)
             # If the error we got was that the card wasn't found (or that the name wasn't specific enough), we'll get a
             #  list of what cards they could have meant and return that instead.
-            search_query = requests.get(f"https://api.scryfall.com/cards/search?q=${card_name}")
+            search_query = scryfall_fetch(f"https://api.scryfall.com/cards/search?q=${encoded_card_name}")
             parsed_search = search_query.json()
             if parsed_search["object"] == "list" and "data" in parsed_search and len(parsed_search["data"]) > 0:
                 # Get a list of the first 10 possible card names
@@ -136,6 +139,14 @@ async def get_card_info(card_name: str) -> Card | CardWithFaces | CardNotFound:
 
     # If we can't parse the scryfall response raise an Exception
     raise ScryFallException(parsed_card)
+
+
+def scryfall_fetch(uri: str, parameters: dict[str, str] | None = None):
+    if parameters is None:
+        parameters = {}
+    headers = {"user-agent": f"magic_card_telegram_bot / {version}", "Accept": "application/json;q=0.9,*/*;q=0.8"}
+    query_response = requests.get(uri, params=parameters, headers=headers)
+    return query_response
 
 
 def main() -> None:
